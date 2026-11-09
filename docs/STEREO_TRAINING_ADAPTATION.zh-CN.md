@@ -6,7 +6,7 @@
 
 开始时已有未提交的 baseline 损失、测试和文档修改；它们已备份在 `.git/task-backups/20261110_013440/`，增量修改时保留了已有 Sequence Loss 的空掩码和无效 NaN 防护。原 `module/`、`train.py`、`scripts/train_omnithings.sh`、`dataset.py` 以及通用几何工具均不修改。
 
-本地未找到 `../omnidata/omnithings/config.yaml` 或其他实际 OmniThings 配置。当前 Mac 无 CUDA。实际相机对、完整 TIFF 的尺寸/范围、真实有效监督比例及峰值显存均待挂载数据和 GPU 后验证，本文不提供伪造的相机参数或显存数字。
+本地未找到 `../omnidata/omnithings/config.yaml` 或其他实际 OmniThings 配置。当前 Mac 无 CUDA。这是代码阶段的本地环境状态；后续已通过服务器的真实数据验证，实测记录见文末。
 
 ## 训练入口直接从原 train.py 修改
 
@@ -136,3 +136,30 @@ Profiling默认比较64x128、64x256、80x320和配置中的160x240，并比较�
 默认CUDA AMP及batch=1；checkpointing仅作用于无BatchNorm运行统计的CNN/Context/GRU，避免重算改变3D BatchNorm状态。是否足以适配目标GPU仍待profiling，不能在当前Mac上给出CUDA峰值。
 
 发布检查已完成源码静态对照、语法检查、既有13项测试、小尺寸Split/Joint及checkpoint前后向检查、正式尺寸meta检查和四个新CLI的help入口检查。旧测试明确固定到旧joint调试尺寸以保留对照。仍待真实标定几何数值核验、真实TIFF检查、真实单批次optimizer更新、checkpoint恢复验证及GPU profiling。网络不可达时不会声称训练已启动或没有OOM。
+
+
+## 服务器启动验证（2026-11-10，Asia/Shanghai）
+
+已上传并从GitHub克隆代码提交 `924ca708085551c8122fc53185204bdfd3d090a9`。为保留旧服务器源码，独立checkout放在宿主机 `~/lzx_ws/project/Baseline-Stereo/stereo_fisheye`，通过既有bind mount映射到 `my-baseline-dev:/workspace/Baseline-Stereo/stereo_fisheye`；无需向同一挂载重复docker cp。
+
+真实标定确认四图均为768x800，光心位于Rig水平四方、半径0.6。几何分析选用cam4 -> cam3：基线约0.84853、光轴夹角90°，全FOV立体角加权重叠约65.43%。这是几何启发式排名，相邻相机对分数差异很小，不宣称其训练精度最佳。
+
+- 正式窗口：azimuth中心 -45.375°、span=130°，elevation=[-45°,45°]。
+- 实际完整GT为320x640、float32；沿用原读取定义为逆深度，首帧数值范围约3.333e-11..0.47994。
+- 重新投影到160x240后的首帧有效监督约82.03%，候选有效比例约95.74%。这仅代表首帧，不是全数据集统计。
+- cam3、cam4和omnidepth_gt_640均核对到10240个帧文件，无缺帧。
+- 真实单批次CUDA前后向无OOM，峰值allocated=9104.41 MiB、reserved=11342 MiB。该首步AMP因梯度溢出自动降scale，未实际更新优化器；随后正式训练正常更新。
+- 正式训练观察约190秒，284步中280次优化器更新，无OOM、无traceback；训练仍在继续，未完成30epoch或验证精度实验。
+- 物理GPU 2，容器内CUDA_VISIBLE_DEVICES=2后为逻辑cuda:0；输入、扫描、GT、18通道Lookup、41通道Context与各轮160x240输出均取得真实shape记录。
+- 当前AMP下扫描、GWC、CV、P0、G2D和熵仍为float32；GEV及Hidden为float16。没有将几何坐标改为half来换显存。
+
+详细记录：`docs/stereo_startup_validation_20261110.json`。Shape中的bytes是逻辑元素量，广播view不一定实际分配相同存储。
+
+后台tmux会话：`stereo-train-20261110`。
+
+```bash
+docker exec -it my-baseline-dev tmux attach -t stereo-train-20261110
+docker exec my-baseline-dev tail -f /workspace/Baseline-Stereo/stereo_fisheye/runs/omnithings_split_160x240_20261110.log
+```
+
+训练采用配置中的30epoch、batch=1、lr=0.0005、AdamW、12轮、AMP、ot_iter=3、lec_weight=0.1、grad_clip=1.0；保留8704训练/512验证，官方1024测试帧未用于当前逐epoch验证。完整四尺寸profiling和完整几何测试矩阵仍未运行，不将启动观察当成全面验证。

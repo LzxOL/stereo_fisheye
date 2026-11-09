@@ -1,0 +1,347 @@
+{
+  "observed_at_utc": "2026-11-09T18:26:56.487734+00:00",
+  "code_commit": "924ca708085551c8122fc53185204bdfd3d090a9",
+  "container": "my-baseline-dev",
+  "container_code_path": "/workspace/Baseline-Stereo/stereo_fisheye",
+  "physical_gpu": 2,
+  "logical_cuda_device": 0,
+  "pair": [
+    "cam4",
+    "cam3"
+  ],
+  "angles": [
+    -45.37499999999999,
+    130.0,
+    -45.0,
+    45.0
+  ],
+  "image_shapes": [
+    [
+      3,
+      768,
+      800
+    ],
+    [
+      3,
+      768,
+      800
+    ]
+  ],
+  "raw_gt_shape": [
+    320,
+    640
+  ],
+  "raw_gt_quantity": "inverse_depth",
+  "reference_gt_shape": [
+    1,
+    160,
+    240
+  ],
+  "first_sample_valid_fraction": 0.8203385472297668,
+  "first_sample_candidate_valid_fraction": 0.9574207663536072,
+  "smoke": {
+    "epoch": 0,
+    "train_loss": 216.4344482421875,
+    "usable_batches": 1,
+    "optimizer_updates": 0,
+    "seconds": 28.5683124368079,
+    "peak_cuda_allocated_mib": 9104.40673828125,
+    "peak_cuda_reserved_mib": 11342.0
+  },
+  "shapes": {
+    "cnn": [
+      {
+        "shape": [
+          1,
+          32,
+          192,
+          200
+        ],
+        "dtype": "torch.float16",
+        "device": "cuda:0",
+        "bytes": 2457600
+      },
+      {
+        "shape": [
+          1,
+          32,
+          384,
+          400
+        ],
+        "dtype": "torch.float32",
+        "device": "cuda:0",
+        "bytes": 19660800
+      }
+    ],
+    "reference": {
+      "shape": [
+        1,
+        32,
+        160,
+        240,
+        96
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 471859200
+    },
+    "target": {
+      "shape": [
+        1,
+        32,
+        160,
+        240,
+        96
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 471859200
+    },
+    "candidate_mask": {
+      "shape": [
+        1,
+        1,
+        96,
+        160,
+        240
+      ],
+      "dtype": "torch.bool",
+      "device": "cuda:0",
+      "bytes": 3686400
+    },
+    "gwc": {
+      "shape": [
+        1,
+        8,
+        96,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 117964800
+    },
+    "attention": {
+      "shape": [
+        1,
+        1,
+        96,
+        160,
+        240
+      ],
+      "dtype": "torch.float16",
+      "device": "cuda:0",
+      "bytes": 7372800
+    },
+    "compressed": {
+      "shape": [
+        1,
+        16,
+        96,
+        160,
+        240
+      ],
+      "dtype": "torch.float16",
+      "device": "cuda:0",
+      "bytes": 117964800
+    },
+    "acv": {
+      "shape": [
+        1,
+        32,
+        96,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 471859200
+    },
+    "gev": {
+      "shape": [
+        1,
+        8,
+        96,
+        160,
+        240
+      ],
+      "dtype": "torch.float16",
+      "device": "cuda:0",
+      "bytes": 58982400
+    },
+    "cv": {
+      "shape": [
+        1,
+        1,
+        96,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 14745600
+    },
+    "init_prob": {
+      "shape": [
+        1,
+        96,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 14745600
+    },
+    "init_disp": {
+      "shape": [
+        1,
+        1,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 153600
+    },
+    "geometry_2d": {
+      "shape": [
+        1,
+        8,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 1228800
+    },
+    "entropy": {
+      "shape": [
+        1,
+        1,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 153600
+    },
+    "context_input": {
+      "shape": [
+        1,
+        41,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 6297600
+    },
+    "hidden": {
+      "shape": [
+        1,
+        64,
+        160,
+        240
+      ],
+      "dtype": "torch.float16",
+      "device": "cuda:0",
+      "bytes": 4915200
+    },
+    "context": {
+      "shape": [
+        1,
+        32,
+        160,
+        240
+      ],
+      "dtype": "torch.float16",
+      "device": "cuda:0",
+      "bytes": 2457600
+    },
+    "lookup": {
+      "shape": [
+        1,
+        18,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 2764800
+    },
+    "motion": {
+      "shape": [
+        1,
+        128,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 19660800
+    },
+    "gru_input": {
+      "shape": [
+        1,
+        160,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 24576000
+    },
+    "prediction": {
+      "shape": [
+        1,
+        1,
+        160,
+        240
+      ],
+      "dtype": "torch.float32",
+      "device": "cuda:0",
+      "bytes": 153600
+    }
+  },
+  "training": {
+    "pid_in_container": 496,
+    "elapsed_seconds": 190,
+    "steps": 284,
+    "successful_optimizer_steps": 280,
+    "last_step": {
+      "valid_pixels": 32004,
+      "valid_fraction": 0.8334375023841858,
+      "init_index_mae": 35.26253128051758,
+      "iteration_index_mae": [
+        32.33502960205078,
+        29.739192962646484,
+        27.463024139404297,
+        25.483837127685547,
+        23.783987045288086,
+        22.344820022583008,
+        21.144336700439453,
+        20.15733528137207,
+        19.354999542236328,
+        18.707998275756836,
+        18.188190460205078,
+        17.77072525024414
+      ],
+      "mean_initial_entropy": 4.486780166625977,
+      "mean_initial_normalized_entropy": 0.9973779916763306,
+      "epoch": 0,
+      "step": 284,
+      "frames": [
+        994
+      ],
+      "loss": 136.417724609375,
+      "sequence_loss": 136.417724609375,
+      "lec_loss": 1.6644378320052056e-08,
+      "learning_rate": 3.348980765853309e-05,
+      "optimizer_step": true
+    },
+    "tmux": "stereo-train-20261110",
+    "oom_detected": false,
+    "traceback_detected": false,
+    "exit_file_present": false
+  }
+}

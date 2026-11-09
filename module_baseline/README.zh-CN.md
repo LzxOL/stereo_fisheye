@@ -2,7 +2,7 @@
 
 模型源自当前工程的 `module/` 副本。原 `module/`、`train.py`、四目训练脚本和通用 OCam 工具保持不变。旧版独立实现仍在 `backups/module_baseline_before_pdf_copy_20261109_231829/`。
 
-代码阶段后，按新增的上传和服务器训练目标进行了发布检查：13项既有测试再次通过；Split/Joint在小尺寸人工网格上的前后向、checkpoint开关及GEV/CV梯度检查通过；正式尺寸完成meta形状检查。真实OmniThings smoke和CUDA显存观察仍需服务器连接与实际数据，不能用这些本地检查代替。
+代码阶段后，按新增的上传和服务器训练目标进行了发布检查：13项既有测试再次通过；Split/Joint在小尺寸人工网格上的前后向、checkpoint开关及GEV/CV梯度检查通过；正式尺寸完成meta形状检查。随后已在真实服务器读取OmniThings、完成正式尺寸CUDA smoke并启动训练；至少284步、280次优化器更新无OOM，详见启动验证记录。
 
 ## 集中配置
 
@@ -58,7 +58,7 @@ G2D / 熵使用 float32，没有 detach GEV 或 P0，也不重定义 OT 概率�
 | `../train_stereo.py` | 直接由原 train.py 修改的独立训练入口 |
 | `training.py` | YAML/CLI映射、双目批次与评估工具 |
 
-## 正式配置下的尺度（已通过meta形状检查，尚非CUDA实测）
+## 正式配置下的尺度（meta与服务器真实CUDA前向均已核对）
 
 | 张量 | B=1 的形状 |
 |---|---|
