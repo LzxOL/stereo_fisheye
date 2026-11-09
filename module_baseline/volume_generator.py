@@ -372,7 +372,7 @@ class Generator(nn.Module):
             init_corr_volume=init_corr,
             num_levels=getattr(self.opts, "corr_levels", 2),
             radius=getattr(self.opts, "corr_radius", 4),
-        )  # 原版 VE/VC 查表对象；当前只构建，不执行后续 GRU
+        )  # 原版 VE/VC 查表对象，供每轮 GRU 查询当前索引附近的匹配证据
 
-        # 这是 Generator 给主网络的内部返回；主网络 forward 在 context_feat 处结束，无预测返回。
+        # Generator 将初值、上下文体和查表对象交给主网络的 Context / GRU 路径。
         return geo_sampler, init_disp, context_feat_volume, init_prob

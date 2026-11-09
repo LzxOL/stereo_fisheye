@@ -1,14 +1,12 @@
-"""验证当前截止到 context 的双目 pipeline；不增加正式网络的输出接口。"""
+"""验证双目代价体、Context Network 和多轮 GRU 的完整前向/反向。"""
 
-import ast
-from pathlib import Path
 import unittest
 import torch
 import torch.nn as nn
 
 from module_baseline import StereoBaseline
 from module_baseline.mrt_layers import CNNEncoder
-from module_baseline.volume_generator import Generator
+from module_baseline.context import ContextNetwork
 from module.mrt_layers import CNNEncoder as OriginalCNNEncoder
 from module.network import PDFOmni
 from module.volume_generator import Generator as OriginalGenerator
@@ -131,34 +129,114 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(torch.isfinite(logits.grad).all())
         self.assertEqual(logits.grad[~valid].count_nonzero(), 0)
 
-    def test_forward_stops_at_context_and_backward_reaches_both_cnns(self):
+    def test_context_heads_preserve_resolution_and_have_independent_gradients(self):
+        context_net = ContextNetwork()
+        reference = torch.randn(2, 32, 8, 16, requires_grad=True)
+        hidden, context = context_net(reference)
+        self.assertEqual(hidden.shape, (2, 64, 8, 16))
+        self.assertEqual(context.shape, (2, 32, 8, 16))
+        self.assertTrue((hidden.abs() <= 1).all())
+        self.assertTrue((context >= 0).all())
+        self.assertIsNot(context_net.hidden_head.weight, context_net.context_head.weight)
+        (hidden.square().mean() + context.square().mean()).backward()
+        for parameter in context_net.parameters():
+            self.assertIsNotNone(parameter.grad)
+            self.assertTrue(torch.isfinite(parameter.grad).all())
+        self.assertGreater(reference.grad.abs().sum().item(), 0)
+
+    def test_forward_and_backward_through_fixed_context_and_recurrent_hidden(self):
         model = small_model().train()
-        seen = {}
+        seen = {"contexts": [], "hidden_states": []}
         handle = model.volume_gen.register_forward_hook(lambda m, args, out: seen.update(volume=out))
+        def capture_context(module, args, out):
+            seen["context_input"] = args[0]
+            seen["hidden_init"], seen["context_feature"] = out
+            for feature in out:
+                feature.retain_grad()
+        def capture_update(module, args, out):
+            seen["contexts"].append(args[1])
+            out[0].retain_grad()
+            seen["hidden_states"].append(out[0])
+        context_handle = model.context_net.register_forward_hook(capture_context)
+        update_handle = model.update_block.register_forward_hook(capture_update)
         valid = torch.ones(2, 1, 16, 8, 16, dtype=torch.bool)
         valid[0, :, :8, 1, 1] = False
         valid[1] = False
-        result = model([torch.randn(2, 3, 64, 64), torch.randn(2, 3, 64, 64)], make_grids(batch=2), valid)
-        handle.remove()
-        self.assertIsNone(result)
+        left = torch.randn(2, 3, 64, 64, requires_grad=True)
+        right = torch.randn(2, 3, 64, 64, requires_grad=True)
+        result = model([left, right], make_grids(batch=2), valid, iters=3)
+        for hook in (handle, context_handle, update_handle):
+            hook.remove()
         _, disp, context, prob = seen["volume"]
-        self.assertEqual(context[..., 0].shape, (2, 32, 8, 16))
+        torch.testing.assert_close(seen["context_input"], context[..., 0])
+        self.assertEqual(len(result["disp_predictions"]), 3)
+        self.assertIs(result["disp"], result["disp_predictions"][-1])
+        torch.testing.assert_close(result["valid_mask"], valid.any(2))
+        for prediction in [result["init_disp"], *result["disp_predictions"]]:
+            self.assertEqual(prediction.shape, (2, 1, 8, 16))
+            self.assertTrue(torch.isfinite(prediction).all())
+            self.assertTrue(((prediction >= 0) & (prediction <= 15)).all())
+            self.assertEqual(prediction[~result["valid_mask"]].count_nonzero(), 0)
+        # 同一份 Context 进入全部三轮；Hidden State 保留跨轮梯度。
+        self.assertTrue(all(feature is seen["context_feature"] for feature in seen["contexts"]))
         self.assertEqual(disp[1].count_nonzero(), 0)
         self.assertEqual(prob.masked_select(~valid[:, 0]).count_nonzero(), 0)
-        (disp[0].square().mean() + prob.square().mean()).backward()
+        loss = result["disp"][result["valid_mask"]].square().mean() + disp[0].square().mean() + prob.square().mean()
+        loss.backward()
         for name, parameter in model.named_parameters():
-            if ".conv2_down." in name:
+            if ".conv2_down." in name or name.startswith("update_block.mask."):
+                # 原 CNN 未使用的 1/4 分支和本阶段不启用的上采样掩码头。
                 self.assertIsNone(parameter.grad)
             else:
                 self.assertIsNotNone(parameter.grad, name)
                 self.assertTrue(torch.isfinite(parameter.grad).all(), name)
         for encoder in (model.encoder_left, model.encoder_right):
             self.assertGreater(encoder.conv0[0].weight.grad.abs().sum().item(), 0)
-        tree = ast.parse(Path(__file__).parents[1].joinpath("network.py").read_text())
-        forward = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "forward")
-        self.assertIsInstance(forward.body[-1], ast.Assign)
-        self.assertEqual(forward.body[-1].targets[0].id, "context_feat")
-        self.assertFalse(any(isinstance(n, ast.Return) for n in ast.walk(forward)))
+        for feature in [seen["hidden_init"], seen["context_feature"], *seen["hidden_states"]]:
+            self.assertGreater(feature.grad.abs().sum().item(), 0)
+        self.assertGreater(left.grad.abs().sum().item(), 0)
+        self.assertGreater(right.grad.abs().sum().item(), 0)
+        self.assertGreater(model.volume_gen.att_branch.classif_att[-1].conv.weight.grad.abs().sum().item(), 0)
+        self.assertGreater(model.volume_gen.cost_agg.up1.conv.weight.grad.abs().sum().item(), 0)
+
+    def test_iteration_uses_candidate_index_units_and_clamps_without_upsampling(self):
+        model = small_model().eval()
+        nn.init.zeros_(model.volume_gen.classifier.weight)
+        nn.init.zeros_(model.update_block.depth_head.conv2.weight)
+        nn.init.constant_(model.update_block.depth_head.conv2.bias, .25)
+        images = [torch.randn(1, 3, 64, 64), torch.randn(1, 3, 64, 64)]
+        grids = make_grids()
+        with torch.no_grad():
+            result = model(images, grids, iters=3)
+        torch.testing.assert_close(result["init_disp"], torch.full_like(result["init_disp"], 7.5))
+        for i, prediction in enumerate(result["disp_predictions"]):
+            torch.testing.assert_close(prediction, torch.full_like(prediction, 7.5 + (i+1)*.25))
+        for delta, expected in [(100., 15.), (-100., 0.)]:
+            nn.init.constant_(model.update_block.depth_head.conv2.bias, delta)
+            with torch.no_grad():
+                result = model(images, grids, iters=2)
+            torch.testing.assert_close(result["disp"], torch.full_like(result["disp"], expected))
+        with torch.no_grad():
+            initial_only = model(images, grids, iters=0)
+        self.assertEqual(initial_only["disp_predictions"], [])
+        torch.testing.assert_close(initial_only["disp"], initial_only["init_disp"])
+
+    def test_entirely_invalid_pipeline_has_zero_outputs_and_finite_backward(self):
+        model = small_model().train()
+        valid = torch.zeros(1, 1, 16, 8, 16, dtype=torch.bool)
+        grids = make_grids()
+        grids[0][:, 0, 0] = float("nan")
+        grids[1][:, 1, 1] = float("inf")
+        result = model([torch.randn(1, 3, 64, 64), torch.randn(1, 3, 64, 64)], grids, valid, iters=2)
+        for value in [result["init_disp"], result["init_prob"], *result["disp_predictions"]]:
+            self.assertTrue(torch.isfinite(value).all())
+            self.assertEqual(value.count_nonzero(), 0)
+        (result["disp"].sum() + result["init_prob"].sum()).backward()
+        for name, parameter in model.named_parameters():
+            if ".conv2_down." in name or name.startswith("update_block.mask."):
+                continue
+            self.assertIsNotNone(parameter.grad, name)
+            self.assertTrue(torch.isfinite(parameter.grad).all(), name)
 
     def test_default_shapes_without_allocating_large_volumes(self):
         with torch.device("meta"):
@@ -171,20 +249,28 @@ class PipelineTests(unittest.TestCase):
         modules = {"left": model.encoder_left.conv2, "gwc_patch": model.volume_gen.att_branch.patch_all,
                    "attention": model.volume_gen.att_branch, "ref_c": model.volume_gen.ref_compress,
                    "tgt_c": model.volume_gen.tgt_compress, "gev": model.volume_gen.cost_agg,
-                   "classifier": model.volume_gen.classifier}
+                   "classifier": model.volume_gen.classifier,
+                   "hidden_head": model.context_net.hidden_head, "context_head": model.context_net.context_head,
+                   "motion": model.update_block.encoder, "gru": model.update_block.gru}
         handles = [m.register_forward_hook(capture(n)) for n, m in modules.items()]
         volume_handle = model.volume_gen.register_forward_hook(
             lambda m, args, out: seen.update(disp=tuple(out[1].shape), context=tuple(out[2].shape), prob=tuple(out[3].shape)))
+        lookup_handle = model.update_block.encoder.register_forward_pre_hook(
+            lambda m, args: seen.update(lookup=tuple(args[0].shape)))
         image = torch.empty(1, 3, 512, 512, device="meta")
         with torch.no_grad():
-            self.assertIsNone(model([image, image], make_grids(height=64, width=128, depth=96, device="meta")))
-        for handle in handles + [volume_handle]:
+            result = model([image, image], make_grids(height=64, width=128, depth=96, device="meta"), iters=2)
+        for handle in handles + [volume_handle, lookup_handle]:
             handle.remove()
         self.assertEqual(seen, {"left": (1, 32, 256, 256), "gwc_patch": (1, 8, 96, 64, 128),
                                 "attention": (1, 1, 96, 64, 128), "ref_c": (1, 16, 96, 64, 128),
                                 "tgt_c": (1, 16, 96, 64, 128), "gev": (1, 8, 96, 64, 128),
                                 "classifier": (1, 1, 96, 64, 128), "disp": (1, 1, 64, 128),
-                                "context": (1, 32, 64, 128, 96), "prob": (1, 96, 64, 128)})
+                                "context": (1, 32, 64, 128, 96), "prob": (1, 96, 64, 128),
+                                "hidden_head": (1, 64, 64, 128), "context_head": (1, 32, 64, 128),
+                                "lookup": (1, 162, 64, 128), "motion": (1, 128, 64, 128), "gru": (1, 64, 64, 128)})
+        self.assertEqual(result["disp"].shape, (1, 1, 64, 128))
+        self.assertEqual(len(result["disp_predictions"]), 2)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 此前独立搭建、会返回物理深度的版本已备份到 [backups/module_baseline_before_pdf_copy_20261109_231829](../backups/module_baseline_before_pdf_copy_20261109_231829/)。本目录不再混用旧版的 `encoder.py`、`sweeping.py`、`volume.py`。
 
-**当前主网络只写到 `context_feat = context_feat_volume[..., 0]`。`forward` 没有预测返回，调用结果为 `None`。** 初始 `init_disp` 和 `init_prob` 已在内部计算，可以在这行断点查看；尚未生成最终深度图。
+主网络在原有初始 `init_disp` 后接入轻量 2D Context Network 和已有 `UpdateBlock`，返回初值、迭代结果及有效掩码。输入仍为 `imgs`、`grids` 和可选 `valid_mask`，新增可选 `iters`，默认迭代 12 次。所有输出索引保留工作网格尺寸与原候选单位，尚不转换为物理深度或上采样。
 
 ## 当前数据流
 
@@ -24,23 +24,35 @@ imgs = [左鱼眼, 右鱼眼]
        Reference / Target -> channel_corr -> Correlation Volume
        GEV / Correlation Volume -> 构建原版 geo_sampler
   -> context_feat = context_feat_volume[..., 0]
-  -> 当前阶段到此结束
+  -> Context Network：Conv2D + GroupNorm + ReLU + 两个 Residual Blocks
+       Hidden Head：Conv2D + Tanh -> hidden_init
+       Context Head：Conv2D + ReLU -> context_feature（各轮固定）
+  -> net = hidden_init，idx = init_disp
+  -> 重复 iters 次
+       geo_sampler(idx) -> 局部 VE/VC 匹配特征
+       UpdateBlock(net, context_feature, 匹配特征, idx)
+         -> MotionEncoder -> SelectiveConvGRU -> 新 net、delta_idx
+       idx = clamp(idx + delta_idx, 0, D-1)
+       全无效像素置零，记录本轮 idx
+  -> 返回初始索引、初始概率、各轮索引、最终索引、有效掩码
 ```
 
 ## 推荐阅读顺序
 
 | 顺序 | 文件与入口 | 重点 |
 |---|---|---|
-| 1 | `network.py::StereoBaseline.__init__` | 默认 D=96、工作网格 64x128；左右 CNN 和原 Generator |
+| 1 | `network.py::StereoBaseline.__init__` | 默认 D=96、工作网格 64x128；左右 CNN、Generator、Context Network 和 UpdateBlock |
 | 2 | `mrt_layers.py::CNNEncoder` | 原版卷积、GroupNorm、残差连接；返回 `(x_4x, x_2x)` |
-| 3 | `network.py::StereoBaseline.forward` | 两路输入到 context 的主干，仅在模块边界和关键维度变化处标注形状 |
+| 3 | `network.py::StereoBaseline.forward` | 两路输入到初值，再接 Context / GRU；仅在关键边界标注形状 |
 | 4 | `network.py::StereoBaseline.spherical_sweep` | 原版 5D 采样；左侧采一次再扩展 D，右侧按候选逐层取样 |
 | 5 | `volume_generator.py::Generator.forward` | 双目 Reference/Target -> GWC / ACV / 初始索引 / context |
 | 6 | 同文件 `groupwise_corr_5d`、`ACVAttention`、`Compress3D`、`Hourglass3D` | 保留原版组件，以模块输入输出说明尺度 |
 | 7 | 同文件 `Generator._sinkhorn` | 原版 OT 加上无效候选支持，随后计算连续候选索引 |
-| 8 | 同文件 `channel_corr_5d`、`CombinedGeoEncodingSampler` | 原版 VC 和查表对象；当前尚未用它做迭代更新 |
+| 8 | 同文件 `channel_corr_5d`、`CombinedGeoEncodingSampler` | VC 和当前索引附近的多层窗口查表 |
+| 9 | `context.py::ContextNetwork` | 左参考二维特征 -> Hidden / Context 两个独立 Head |
+| 10 | `update.py::UpdateBlock`、`MotionEncoder`、`SelectiveConvGRU` | 直接复用已有卷积 GRU，融合 Context 与 Motion，回归索引增量 |
 
-这些步骤对应论文 Fig. 2 的 Feature Extraction、Volume Generation，以及进入 Iterative Refinement 前的初始化。Fig. 4 的 DiGRU、DAA / PDD 尚未接入当前主干。
+这些步骤沿 Fig. 2 的特征、特征体和迭代路径组织。Context Network 是当前 baseline 新增的设计；本阶段复用普通 `UpdateBlock` 分支，没有接入 Fig. 4 的 DiGRU / PDD。已有 UpdateBlock 自带通道、空间注意力和小/大核 SelectiveConvGRU，不能将它等同于单个普通 3x3 ConvGRU。
 
 ## 与原版、上一版 baseline 的差别
 
@@ -57,11 +69,24 @@ imgs = [左鱼眼, 右鱼眼]
 | `use_geo_acv` | 可附加完整 ERP 的经纬度 | 固定关闭，任意左参考网格不能套用该经纬度 |
 | 初始 `disp` | classifier 正向 logits -> OT -> 归一化 -> 索引期望 | 沿用；候选无效时增加 mask，OT 与回归使用 float32 |
 | 不可见区域 | 原版没有显式候选 mask | 从坐标与外部 mask 得到联合有效性，限制匹配注意力、ACV、VC 和 OT |
-| 上下文 | 融合后的 Reference 第 0 个候选切片 | 左 Reference 第 0 个候选切片 |
-| 后续 GE / PDD / DiGRU / 上采样 | 主网络继续执行 | 源码保留，当前主网络不构建、不执行 |
+| 上下文 | Reference 切片直接初始化，后续按预测索引重查 | 左 Reference 切片先经新增 2D CNN，固定 Context 用于所有轮次 |
+| 迭代 | UpdateBlock 或 DiGRU，按配置选择 | 复用已有 UpdateBlock，Hidden=64、Context=32 |
+| GE / PDD / DiGRU / 上采样 | 按配置执行 | 源码保留，本阶段不启用 |
 | 物理深度换算 | 后续经数据集完成 | 当前没有此步骤，也不做上一版 baseline 的物理逆深度期望和上采样 |
 
-`backbone.py`、`featurelayer.py`、`ge.py`、`loss_functions.py`、`mrt_model.py`、`mrt_utils.py`、`update.py` 均完整保留。它们出现在目录里不代表已接入双目主网络。`mrt_layers.py` 只为原 CNN 增加尺度注释；实际算法修改集中在 `network.py` 和 `volume_generator.py::Generator`。
+`update.py` 的类与计算原样复用；新阶段没有修改 Spherical Sweeping、GWC、ACV 或 Hourglass3D 的计算。`volume_generator.py` 只更新了两处过时注释。`backbone.py`、`featurelayer.py`、`ge.py`、`loss_functions.py`、`mrt_model.py`、`mrt_utils.py` 仍保留，尚未接入训练与损失入口。
+
+## Context Network 到 GRU
+
+左 Reference Volume 的深度轴是同一份左图特征的广播，所以 `[...,0]` 就是需要的二维特征。右相机候选 0 不可见不会将该左参考切片清空；左图自身无效时，输入对应位置已由球面扫描置零。
+
+Context Network 全程保持 H/W：32 通道卷积 Stem、两个 32 通道残差块，再分两个独立 Head。Hidden Head 使用 Tanh 产生 64 通道 `hidden_init`，只作为第 0 轮隐藏状态；Context Head 使用 ReLU 产生 32 通道 `context_feature`，同一份张量用于所有轮次，不再按预测深度重新采样上下文。
+
+`corr_levels=2`、`corr_radius=4`、`geo_ch=8`，因此 `geo_sampler` 输出通道为 `2*(8+1)*(2*4+1)=162`。已有 MotionEncoder 将这份几何特征与当前索引编码为 128 通道 Motion Feature，与 32 通道 Context 一起组成 160 通道 GRU 输入；GRU 更新 64 通道 Hidden，DepthHead 输出单通道增量。
+
+沿用原版的迭代梯度方式：每轮切断上一轮索引的梯度，但保留 Hidden 的循环连接，以及查表到 VE/VC 的梯度。初始概率 / classifier 分支可通过返回的 `init_prob` 或 `init_disp` 单独监督；只监督最终输出时，不会经 detached 初值反传到 classifier。
+
+本阶段调用 `no_upsample=True`：UpdateBlock 的上采样掩码头不执行，不放大索引单位。该头和 CNN 原有的 1/4 分支仍注册在模型中，但未参与当前预测，参数没有梯度。每轮结果限制在 `[0,D-1]`，全无效像素置零并返回 bool 有效掩码；有部分候选有效的像素仍允许回归连续索引。
 
 ## 初始 disp 的含义
 
@@ -100,6 +125,11 @@ OT 沿用原版默认 3 次交替归一化，分数受同一张图中所有有�
 | init_disp | `[B,1,64,128]` |
 | Correlation Volume | `[B,1,96,64,128]` |
 | context_feat | `[B,32,64,128]` |
+| hidden_init / 每轮 Hidden | 各 `[B,64,64,128]` |
+| context_feature | `[B,32,64,128]` |
+| geo_sampler 查询结果 | `[B,162,64,128]` |
+| Motion Feature / GRU 拼接输入 | `[B,128,64,128]` / `[B,160,64,128]` |
+| 每轮索引增量 / 优化后索引 | 各 `[B,1,64,128]` |
 
 D/H/W 需要是 8 的倍数，以匹配原沙漏的三次下采样。训练态最粗层 BatchNorm 还需要至少两个统计元素。
 
@@ -115,13 +145,22 @@ y, x = torch.meshgrid(torch.linspace(-.8,.8,8), torch.linspace(-.8,.8,16), index
 left_grid = torch.stack([x,y], dim=-1)[None]
 right_grid = left_grid.unsqueeze(3).repeat(1,1,1,16,1)  # 仅用于接口调试的人工网格
 with torch.no_grad():
-    model(imgs, [left_grid, right_grid])  # 无预测返回
+    result = model(imgs, [left_grid, right_grid], iters=3)
+print(result["disp"].shape)  # [1,1,8,16]，当前候选索引单位
 ```
 
-在 `network.py` 最后 `context_feat = ...` 一行设断点，查看 `init_disp`、`init_prob`、`context_feat_volume`，单步后查看 `context_feat`。测试通过 hook 获取 Generator 的内部返回，不为调试新增主网络输出接口。
+输出字典：
+
+- `init_disp`：初始索引 `[B,1,H,W]`。
+- `init_prob`：初始概率 `[B,D,H,W]`，可用于初值监督。
+- `disp_predictions`：长度为 iters 的列表，每项 `[B,1,H,W]`。
+- `disp`：最后一轮索引 `[B,1,H,W]`；`iters=0` 时返回初值，列表为空。
+- `valid_mask`：像素有效性 bool `[B,1,H,W]`，由任一候选是否有效决定。
+
+可以在 `context_feat = ...`、`self.context_net(...)` 和 `self.update_block(...)` 处设断点，依次查看左参考特征、两个 Head、查表窗口和隐藏状态。训练可直接对 `disp_predictions` 设置多轮监督，并另外监督初值；当前未新增训练脚本或损失函数。
 
 ```bash
 python -m unittest discover -s module_baseline/tests -v
 ```
 
-检查覆盖原 CNN / 球面采样一致性、同权重下原 Generator 的 ACV/OT/查表一致性、候选索引回归、无效候选与空 OT 行/列、CPU 前向/反向，以及默认尺寸 meta 形状。meta 检查不代表已完成默认大尺寸的实际推理或显存评估。
+检查覆盖原 CNN / 球面采样一致性、同权重下原 Generator 的 ACV/OT/查表一致性，以及新 Context 两个 Head、固定上下文与跨轮 Hidden 梯度、完整 CPU 前向/反向、索引增量单位、上下界、全无效区域和默认尺寸 meta 形状。meta 检查不代表默认大尺寸的实际推理或显存评估；本次没有进行训练收敛或深度精度实验。
