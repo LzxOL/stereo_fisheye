@@ -324,7 +324,7 @@ class Generator(nn.Module):
 
         return (log_q + u + v).reshape(B, D, H, W)  # 无效连接保持 -inf，取 exp 后为零
 
-    def forward(self, spherical_feats, valid_mask=None):
+    def forward(self, spherical_feats, valid_mask=None, return_volumes=False):
         # 双目列表只有 [左参考体,右目标体]，各 [B,32,H,W,D]；不再拼 G 或执行四相机 MLP。
         # 3D 卷积分支使用 [B,C,D,H,W]；默认尺寸示例见 README。
         reference_feat, target_feat = spherical_feats
@@ -351,7 +351,7 @@ class Generator(nn.Module):
         geo_encoding_volume = self.cost_agg(acv)  # [B,8,D,H,W]
 
         # VE=[B,geo_ch,D,H,W]，3D 分类头得到每个候选的分数。
-        # OT 得到全图耦合质量，再按 D 归一化成每像素概率，供初值回归及 LEC。
+        # OT 得到全图耦合质量，再按 D 归一化成每像素概率，仅用于计算初始回归值。
         # 与原版一致，classifier 的值作为正向匹配 logits 输入 OT，不额外取负号。
         logits = self.classifier(geo_encoding_volume).squeeze(1).float()  # [B,D,H,W]；OT 使用 float32
         ot_log_prob = self._sinkhorn(logits, self.ot_iter, valid_mask[:, 0])
@@ -366,6 +366,10 @@ class Generator(nn.Module):
 
         init_corr = channel_corr_5d(reference_feat, target_feat)
         init_corr = torch.where(valid_mask, init_corr, 0.0)
+
+        # 新主网络自己选择 joint / split；默认返回接口保留给旧调用与消融对照。
+        if return_volumes:
+            return (geo_encoding_volume, init_corr), init_disp, context_feat_volume, init_prob
 
         geo_sampler = CombinedGeoEncodingSampler(
             geo_encoding_volume=geo_encoding_volume,

@@ -1,0 +1,40 @@
+# 正式训练配置。D/H/W 是工作候选体尺度，与鱼眼输入分辨率分开。
+data:
+  root: ../omnidata/omnithings
+  image_size: [768, 800]
+  num_depth: 96
+  sweep_size: [160, 240]
+  sweep_azimuth_center_deg: null  # 根据实际相机对共同视场推导
+  sweep_azimuth_span_deg: 130.0
+  sweep_elevation_min_deg: -45.0
+  sweep_elevation_max_deg: 45.0
+  val_count: 512
+  use_rgb: false
+  augment: true
+  check_occlusion: true
+model:
+  volume_update_mode: split
+  corr_levels: 2
+  corr_radius: 4
+  ot_iter: 3
+  gru_small_kernel: 1
+  gru_large_kernel: 5  # 保留当前双目 Baseline；原 train.py 会覆盖为 7，可显式对照
+  gru_large_mode: sep
+  share_encoder: false
+  sweep_precision: float32  # 保持几何网格和默认扫描精度；amp 为单独 profiling 对照
+  gradient_checkpointing: true
+train:
+  epochs: 30
+  batch_size: 1
+  train_iters: 12
+  valid_iters: 12
+  learning_rate: 0.0005
+  weight_decay: 0.00001
+  optimizer: adamw
+  mixed_precision: true
+  lec_weight: 0.1
+  loss_gamma: 0.9
+  supervise_init: false  # 原 PDF-Omni 的 Sequence Loss 默认只监督迭代预测
+  grad_clip: 1.0
+  num_workers: 4
+  seed: 0

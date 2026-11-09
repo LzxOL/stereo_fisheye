@@ -1,0 +1,693 @@
+{
+  "validation_kind": "meta tensor shapes only; no real data or CUDA memory measurement",
+  "records": {
+    "cnn_left": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              3,
+              768,
+              800
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 7372800
+          }
+        ],
+        "output": [
+          {
+            "shape": [
+              1,
+              32,
+              192,
+              200
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 4915200
+          },
+          {
+            "shape": [
+              1,
+              32,
+              384,
+              400
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 19660800
+          }
+        ]
+      }
+    ],
+    "cnn_right": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              3,
+              768,
+              800
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 7372800
+          }
+        ],
+        "output": [
+          {
+            "shape": [
+              1,
+              32,
+              192,
+              200
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 4915200
+          },
+          {
+            "shape": [
+              1,
+              32,
+              384,
+              400
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 19660800
+          }
+        ]
+      }
+    ],
+    "gwc_and_attention": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              8,
+              96,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 117964800
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            1,
+            96,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 14745600
+        }
+      }
+    ],
+    "compress_left": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              32,
+              160,
+              240,
+              96
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 471859200
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            16,
+            96,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 235929600
+        }
+      }
+    ],
+    "compress_right": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              32,
+              160,
+              240,
+              96
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 471859200
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            16,
+            96,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 235929600
+        }
+      }
+    ],
+    "acv_and_gev": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              32,
+              96,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 471859200
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            8,
+            96,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 117964800
+        }
+      }
+    ],
+    "classifier": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              8,
+              96,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 117964800
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            1,
+            96,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 14745600
+        }
+      }
+    ],
+    "context": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              41,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 6297600
+          }
+        ],
+        "output": [
+          {
+            "shape": [
+              1,
+              64,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 9830400
+          },
+          {
+            "shape": [
+              1,
+              32,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 4915200
+          }
+        ]
+      }
+    ],
+    "lookup_and_motion": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              18,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 2764800
+          },
+          {
+            "shape": [
+              1,
+              1,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 153600
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            128,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 19660800
+        }
+      },
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              18,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 2764800
+          },
+          {
+            "shape": [
+              1,
+              1,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 153600
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            128,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 19660800
+        }
+      }
+    ],
+    "gru": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              1,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 153600
+          },
+          {
+            "shape": [
+              1,
+              64,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 9830400
+          },
+          {
+            "shape": [
+              1,
+              160,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 24576000
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            64,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 9830400
+        }
+      },
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              1,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 153600
+          },
+          {
+            "shape": [
+              1,
+              64,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 9830400
+          },
+          {
+            "shape": [
+              1,
+              160,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 24576000
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            64,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 9830400
+        }
+      }
+    ],
+    "delta": [
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              64,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 9830400
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            1,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 153600
+        }
+      },
+      {
+        "input": [
+          {
+            "shape": [
+              1,
+              64,
+              160,
+              240
+            ],
+            "dtype": "torch.float32",
+            "device": "meta",
+            "bytes": 9830400
+          }
+        ],
+        "output": {
+          "shape": [
+            1,
+            1,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 153600
+        }
+      }
+    ],
+    "network": {
+      "init_disp": {
+        "shape": [
+          1,
+          1,
+          160,
+          240
+        ],
+        "dtype": "torch.float32",
+        "device": "meta",
+        "bytes": 153600
+      },
+      "init_prob": {
+        "shape": [
+          1,
+          96,
+          160,
+          240
+        ],
+        "dtype": "torch.float32",
+        "device": "meta",
+        "bytes": 14745600
+      },
+      "disp_predictions": [
+        {
+          "shape": [
+            1,
+            1,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 153600
+        },
+        {
+          "shape": [
+            1,
+            1,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 153600
+        }
+      ],
+      "disp": {
+        "shape": [
+          1,
+          1,
+          160,
+          240
+        ],
+        "dtype": "torch.float32",
+        "device": "meta",
+        "bytes": 153600
+      },
+      "valid_mask": {
+        "shape": [
+          1,
+          1,
+          160,
+          240
+        ],
+        "dtype": "torch.bool",
+        "device": "meta",
+        "bytes": 38400
+      },
+      "uncertainty": {
+        "shape": [
+          1,
+          1,
+          160,
+          240
+        ],
+        "dtype": "torch.float32",
+        "device": "meta",
+        "bytes": 153600
+      },
+      "intermediates": {
+        "reference": {
+          "shape": [
+            1,
+            32,
+            160,
+            240,
+            96
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 471859200
+        },
+        "target": {
+          "shape": [
+            1,
+            32,
+            160,
+            240,
+            96
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 471859200
+        },
+        "gev": {
+          "shape": [
+            1,
+            8,
+            96,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 117964800
+        },
+        "cv": {
+          "shape": [
+            1,
+            1,
+            96,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 14745600
+        },
+        "geometry_2d": {
+          "shape": [
+            1,
+            8,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 1228800
+        },
+        "context_input": {
+          "shape": [
+            1,
+            41,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 6297600
+        },
+        "hidden_init": {
+          "shape": [
+            1,
+            64,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 9830400
+        },
+        "context_feature": {
+          "shape": [
+            1,
+            32,
+            160,
+            240
+          ],
+          "dtype": "torch.float32",
+          "device": "meta",
+          "bytes": 4915200
+        },
+        "candidate_valid": {
+          "shape": [
+            1,
+            1,
+            96,
+            160,
+            240
+          ],
+          "dtype": "torch.bool",
+          "device": "meta",
+          "bytes": 3686400
+        }
+      }
+    }
+  }
+}

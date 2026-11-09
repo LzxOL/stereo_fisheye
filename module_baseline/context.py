@@ -20,11 +20,11 @@ class ResidualBlock2D(nn.Module):
 
 
 class ContextNetwork(nn.Module):
-    def __init__(self, hidden_dim=64, context_dim=32):
+    def __init__(self, hidden_dim=64, context_dim=32, input_dim=32):
         super().__init__()
         # 单尺度处理，不改变 H/W；GroupNorm 不依赖 batch 的大小。
         self.stem = nn.Sequential(
-            nn.Conv2d(32, 32, 3, padding=1, bias=False),
+            nn.Conv2d(input_dim, 32, 3, padding=1, bias=False),
             nn.GroupNorm(8, 32),
             nn.ReLU(inplace=False),
         )
@@ -33,7 +33,7 @@ class ContextNetwork(nn.Module):
         self.context_head = nn.Conv2d(32, context_dim, 3, padding=1)
 
     def forward(self, reference_feature):
-        # 输入 [B,32,H,W]，来自左 Reference Volume 的任一深度切片。
+        # split 输入为左特征、GEV 聚合和熵的 41 通道拼接；joint 保留 32 通道左特征。
         feature = self.residual_blocks(self.stem(reference_feature))
         hidden_init = torch.tanh(self.hidden_head(feature))  # [B,64,H,W]
         context_feature = torch.relu(self.context_head(feature))  # [B,32,H,W]

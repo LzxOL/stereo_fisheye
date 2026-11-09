@@ -195,10 +195,9 @@ class UpdateBlock(nn.Module):
 
         L = opts.corr_levels
         r = opts.corr_radius
-        G = getattr(opts, 'gwc_groups', 8)
-        # Lookup 实际输出 L*(2r+1)*(geo_ch+1)；这里用 G=gwc_groups 估计通道。
-        # 默认 geo_ch=G=8 两者相等；单独修改任一个参数可能导致输入通道不匹配。
-        cor_planes = L * (2 * r + 1) * (G + 1)
+        # split 为 CV 的 1 通道；joint 为 GEV + CV 的 8+1 通道，与 GWC groups 无关。
+        corr_channels = opts.corr_channels
+        cor_planes = L * (2 * r + 1) * corr_channels
 
         self.encoder = MotionEncoder(cor_planes)
         encoder_output_dim = 128

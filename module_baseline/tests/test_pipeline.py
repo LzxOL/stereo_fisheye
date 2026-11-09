@@ -7,6 +7,7 @@ import torch.nn as nn
 from module_baseline import StereoBaseline
 from module_baseline.mrt_layers import CNNEncoder
 from module_baseline.context import ContextNetwork
+from module_baseline.loss_functions import sequence_loss
 from module.mrt_layers import CNNEncoder as OriginalCNNEncoder
 from module.network import PDFOmni
 from module.volume_generator import Generator as OriginalGenerator
@@ -22,7 +23,8 @@ def make_grids(batch=1, height=8, width=16, depth=16, device="cpu"):
 
 
 def small_model():
-    return StereoBaseline(num_depth=16, sweep_size=(8, 16))
+    # 保留改造前的 joint 回归用例；新 split / 正式尺寸验证按用户要求稍后补做。
+    return StereoBaseline(num_depth=16, sweep_size=(8, 16), volume_update_mode="joint")
 
 
 class SelectFirst(nn.Module):
@@ -181,7 +183,9 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(all(feature is seen["context_feature"] for feature in seen["contexts"]))
         self.assertEqual(disp[1].count_nonzero(), 0)
         self.assertEqual(prob.masked_select(~valid[:, 0]).count_nonzero(), 0)
-        loss = result["disp"][result["valid_mask"]].square().mean() + disp[0].square().mean() + prob.square().mean()
+        target = torch.full_like(disp, 5.0)
+        # 初值与各轮预测仅用数值回归监督；不向损失传入 init_prob。
+        loss = sequence_loss([result["init_disp"], *result["disp_predictions"]], target, result["valid_mask"])
         loss.backward()
         for name, parameter in model.named_parameters():
             if ".conv2_down." in name or name.startswith("update_block.mask."):
@@ -231,7 +235,10 @@ class PipelineTests(unittest.TestCase):
         for value in [result["init_disp"], result["init_prob"], *result["disp_predictions"]]:
             self.assertTrue(torch.isfinite(value).all())
             self.assertEqual(value.count_nonzero(), 0)
-        (result["disp"].sum() + result["init_prob"].sum()).backward()
+        loss = sequence_loss([result["init_disp"], *result["disp_predictions"]],
+                             torch.full_like(result["disp"], float("nan")), result["valid_mask"])
+        self.assertEqual(loss.item(), 0)
+        loss.backward()
         for name, parameter in model.named_parameters():
             if ".conv2_down." in name or name.startswith("update_block.mask."):
                 continue
@@ -240,7 +247,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_default_shapes_without_allocating_large_volumes(self):
         with torch.device("meta"):
-            model = StereoBaseline().eval()
+            model = StereoBaseline(num_depth=96, sweep_size=(64, 128), volume_update_mode="joint").eval()
         seen = {}
         def capture(name):
             def hook(module, args, out):
