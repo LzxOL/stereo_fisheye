@@ -1,0 +1,25 @@
+# Apple Silicon / macOS：不使用 README 中的 CUDA wheel 源。
+# 创建：conda env create -f environment.macos.yml
+# 已有环境：conda activate pdf_omni
+name: pdf_omni
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+      - torch==2.11.0
+      - torchvision==0.26.0
+      - numpy==2.2.6
+      - scipy==1.15.3
+      - matplotlib==3.10.9
+      - imageio==2.37.4
+      - scikit-image==0.25.2
+      - tifffile==2025.5.10
+      - Pillow==12.2.0
+      - easydict==1.13
+      - PyYAML==6.0.3
+      - tensorboard==2.21.0
+      - open3d==0.19.0

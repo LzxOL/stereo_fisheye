@@ -21,6 +21,7 @@ def loadDBConfigs(dbname: str, dbpath: str, opts: Edict) \
     for k in config['dataset'].keys():
         opts[k] = config['dataset'][k]
 
+    # 保留 YAML 中四相机的原始顺序；模型以索引 0/2 和 1/3 做相反朝向配对。
     cameras_cfg = config['cameras']
     for i in range(4):
         ocam = OcamModel()

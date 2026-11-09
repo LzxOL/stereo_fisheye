@@ -51,9 +51,13 @@ def getEquirectCoordinate(pts: np.ndarray, equirect_size: (int, int),
 
 def makeSphericalRays(equirect_size: (int, int),
                       phi_deg: float, phi2_deg=-1.0) -> np.ndarray:
+    # Fig. 2 Spherical Sweeping 的目标 ERP：每个像素对应 rig 坐标系的一条单位射线。
+    # 返回 [3,H*W]，后续每列乘一个候选球面半径即得到假设三维点。
     h, w = equirect_size
     xs, ys = np.meshgrid(range(w), range(h))
     w_2, h_2 = w / 2.0, (h - 1) / 2.0
+    # 经度按列均匀采样一个完整周期，包含 +pi/2 的坐标约定偏移；不重复右端点。
+    # 默认 phi2_deg=-1 时，纬度按行覆盖 [-phi_deg,+phi_deg]，并非必然覆盖两极。
     xs = (xs - w_2) / w_2 * np.pi + (np.pi / 2.0)
     if phi2_deg > 0.0:
         med = np.deg2rad(sum(phi2_deg - phi_deg) / 2.0)
@@ -62,6 +66,7 @@ def makeSphericalRays(equirect_size: (int, int),
     else:
         ys = (ys - h_2) / h_2 * np.deg2rad(phi_deg)
     
+    # 单位方向 r=(-cos(phi)cos(theta), sin(phi), cos(phi)sin(theta))。
     X = -np.cos(ys) * np.cos(xs)
     Y = np.sin(ys)
     Z = np.cos(ys) * np.sin(xs)
@@ -71,6 +76,8 @@ def makeSphericalRays(equirect_size: (int, int),
     return rays
 
 
+# 输入/监督/投影查表的共同入口。相机列表顺序取自 config.yaml，图像依次读 cam1..4；
+# 模型按论文约定将其解释为前、右、后、左，代码没有按 cam_id 或姿态重新排序。
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, dbname: str, db_opts=None, load_lut=True, train=True, db_root='../omnidata'):
         super(torch.utils.data.Dataset, self).__init__()
@@ -122,6 +129,8 @@ class Dataset(torch.utils.data.Dataset):
         self.augmentor = Augmentor()
 
     def __initSweep(self, load_lut=True):
+        # 完整逆深度轴 rho_n=rho_min+n*Delta_rho，n∈[0,N-1]。
+        # 候选在逆深度上等间距，故在米制距离上不等间距；索引越大表示越近。
         self.rays = makeSphericalRays(self.equirect_size,
             self.phi_deg, self.phi2_deg)
         self.min_invdepth = 1.0 / self.max_depth
@@ -134,6 +143,9 @@ class Dataset(torch.utils.data.Dataset):
         if load_lut: self.__loadOrBuildLookupTable()
 
     def __loadOrBuildLookupTable(self) -> None:
+        # LUT 与当前帧无关，同一套标定/分辨率/候选设置可复用。
+        # 二进制布局 [4,H,W,D,2]；模型接收拆开的四个 [H,W,D,2] 网格。
+        # 缓存文件名并未包含全部标定/纬度参数，不能仅凭同名断言几何配置一致。
         h, w = self.equirect_size
         path = osp.join(self.db_path, self.lut_fmt%(self.num_downsample, h, w, self.num_invdepth))
         h, w = h // 2**self.num_downsample, w // 2**self.num_downsample
@@ -163,6 +175,10 @@ class Dataset(torch.utils.data.Dataset):
             return self.loadTestSample(i, self.read_input_image)
 
     def buildLookupTable(self, transform=None, phi_deg=None, phi2_deg=None, output_gpu_tensor=False) -> list:
+        # 为每个 ERP 像素和逆深度候选，预计算它在四个鱼眼图像中的采样坐标。
+        # 流程：ERP -> rig 射线 -> 候选球面三维点 -> 相机坐标 -> OCam 像素 -> [-1,1]。
+        # K=num_downsample、s=2^K；低分辨率 H/W/D 都除以 s（默认 80/320/96）。
+        # 返回 list[4]，每项 [H,W,D,2]；末维是 (u,v)，不是可见性或融合权重。
         num_invdepth = int(self.num_invdepth / 2**self.num_downsample)
         h, w = self.equirect_size
         h, w = h // 2 ** self.num_downsample, w // 2 ** self.num_downsample
@@ -177,6 +193,8 @@ class Dataset(torch.utils.data.Dataset):
         else:
             grids = [np.zeros((h, w, num_invdepth, 2), dtype=np.float32) for _ in range(4)]
         for d in range(num_invdepth):
+            # 第 d 层使用完整轴的第 s*d 个逆深度；因此网络低分辨率索引乘 s
+            # 才是完整索引。深度通过这里的球面半径进入投影，而不在 forward 中求逆。
             depth = 1.0 / self.invdepths[2**self.num_downsample * d]
             pts = depth * rays
             if output_gpu_tensor:
@@ -185,10 +203,15 @@ class Dataset(torch.utils.data.Dataset):
             if transform is not None:
                 pts = applyTransform(transform, pts)
             for i in range(4):
+                # P_cam=R_i*(r/rho_d)+t_i。平移项使投影随候选深度变化，
+                # 这正是视差/三角测量证据的来源；不能只按旋转把四图拼成全景。
                 P = applyTransform(self.ocams[i].rig2cam, pts)
                 p = self.ocams[i].rayToPixel(P)
                 grid = pixelToGrid(p, equirect_size,
                                    (self.ocams[i].height, self.ocams[i].width))
+                # rayToPixel 将超出相机角视场的像素置为 -1e5，归一化后在此变为 -2，
+                # 交给 grid_sample 的零填充。注意正方向越界被截为 +1（边界位置），
+                # 因此“所有图像越界都严格为零”并不是这段代码的保证。
                 grid = np.clip(grid, -2, 1)
                 if output_gpu_tensor:
                     grids[i][..., d, :] = grid
@@ -197,6 +220,8 @@ class Dataset(torch.utils.data.Dataset):
         return grids
 
     def loadImages(self, sample_ref, out_raw_imgs=False, use_rgb=False):
+        # 输出 list[4]，每项 [Cin,Hi,Wi]；DataLoader 自动加上批次 B。
+        # 默认将 RGB 通道平均成灰度，掩码外置零并标准化；编码器再复制为 3 通道。
         fidx = int(sample_ref)
         imgs = []
         raw_imgs = []
@@ -246,15 +271,20 @@ class Dataset(torch.utils.data.Dataset):
             invdepth.astype(np.float32).tofile(path)
     
     def indexToInvdepth(self, idx, start_index=0):
+        # 网络最终输出完整索引 q；rho=rho_min+q*Delta_rho，米制深度需再取 1/rho。
+        # 米制单位沿用标定平移与数据集约定，本函数自身仅返回逆深度。
         return self.min_invdepth + \
             (idx - start_index) * self.sample_step_invdepth
     
     def invdepthToIndex(self, inv_depth, start_index=0):
+        # 上式的逆变换；GT 和 Sequence Loss 都使用这一索引单位。
         return (inv_depth - self.min_invdepth) / \
             self.sample_step_invdepth + start_index
     
     def loadGTInvdepthIndex(self, sample_ref, remove_gt_noise=True,
                             morph_win_size=5):
+        # 读取的是逆深度 GT，裁剪 ERP 纬度范围后转成完整候选轴索引 [Hout,Wout]。
+        # 形态学检测有限深度区域内的空洞，将这些噪声位置索引标为 -1。
         fidx = int(sample_ref)
         h, w = self.equirect_size
         gt_depth_file = osp.join(self.db_path, self.gt_depth_fmt % (w, fidx))
@@ -278,6 +308,8 @@ class Dataset(torch.utils.data.Dataset):
         return gt_idx
 
     def loadSample(self, sample_ref, read_input_image=True, varargin=None):
+        # 一帧的四路输入、GT 索引、有效监督掩码、原始可视化图像。
+        # 这里 valid 是监督有效性；它不会传进 Generator 充当相机融合的可见性掩码。
         opts = Edict()
         opts.remove_gt_noise = True
         opts.morph_win_size = 5
@@ -300,6 +332,8 @@ class Dataset(torch.utils.data.Dataset):
         return self.loadSample(self.test_idx[i], read_input_image, varargin)
 
     def getPanorama(self, imgs, invdepth, transform=None):
+        # 仅用于结果可视化：按已预测深度将原图投到 ERP，对可见相机取平均。
+        # 此处的 theta 掩码/计数平均与 Generator 的可学习特征融合不是同一条路径。
         invdepth = toNumpy(invdepth)
         depth = 1 / invdepth.reshape((1, -1))
         P = depth * self.rays
@@ -394,6 +428,8 @@ class Dataset(torch.utils.data.Dataset):
 
     def evalError(self, invdepth_idx, gt, valid) \
                 -> (float, float, float, float, float):
+        # 论文 §4.2：绝对索引误差除以 N 再乘 100，返回 >1/>3/>5、MAE、RMS。
+        # 阈值单位是完整逆深度范围的百分比，不是米，也不是原始索引差 1/3/5。
         invdepth_idx = toNumpy(invdepth_idx).flatten()
         gt = toNumpy(gt).flatten()
         valid = toNumpy(valid).flatten().astype(bool)
@@ -408,6 +444,8 @@ class Dataset(torch.utils.data.Dataset):
         rms = np.sqrt(np.nanmean(error**2))
         return e1, e3, e5, mae, rms
 
+# 多数据集训练复用首个数据集的 LUT；日志中的 share configs 是其几何前提。
+# 不会为每个训练样本按所属数据集在 forward 中切换一套投影网格。
 class MultiDataset(Dataset):
     def __init__(self, dbnames: list, db_opts=None, load_lut=True, train=True,
                  db_root = '../omnidata'):

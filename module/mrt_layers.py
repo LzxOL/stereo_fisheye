@@ -10,6 +10,7 @@ import torch.utils.checkpoint as cp
 from torch import Tensor
 
 
+# token 自注意力：[Btokens,N,C] -> 同形状；多头内部维度为 dim_expansion*C。
 class SelfAttn(nn.Module):
     def __init__(
         self,
@@ -32,6 +33,7 @@ class SelfAttn(nn.Module):
             self.pe_proj = nn.Linear(32, self.head_dim)
 
     def forward(self, x: torch.Tensor, pe: torch.Tensor = None) -> torch.Tensor:
+        # q/k/v=[Btokens,heads,N,head_dim]，标准注意力为 softmax(QK^T/sqrt(head_dim))*V。
         B, N, C = x.shape
         scale = self.scale
 
@@ -43,6 +45,7 @@ class SelfAttn(nn.Module):
             score = torch.einsum("...ic, ...jc -> ...ij", scale * q, k)
             attn = score.reshape(B, self.num_heads, N, N).softmax(dim=-1)
             out = torch.einsum("...ij, ...jc -> ...ic", attn, v)
+            # 相对位置编码 [N,N,32] 按注意力对 key 求和，再投影加入每个 query 的输出。
             pe_sum = torch.einsum("...nij, ijc -> ...nic", attn, pe)
             out = out + self.pe_proj(pe_sum)
         else:
@@ -53,6 +56,8 @@ class SelfAttn(nn.Module):
         return out
 
 
+# 双向跨视图注意力：Qx 对 Ky/Vy 取信息，同时 Qy 对 Kx/Vx 取信息。
+# 输入两组同尺寸 token [Btokens,N,C]，返回两组更新量；外层 block 再加残差。
 class CrossAttn(nn.Module):
     def __init__(
         self,
@@ -89,6 +94,7 @@ class CrossAttn(nn.Module):
         return x_out, y_out
 
 
+# 将每一行作为独立序列 [B*H,W,C]，只在行内做自注意力，降低细尺度开销。
 class SelfAttnBlock1D(nn.Module):
     def __init__(
         self,
@@ -115,6 +121,8 @@ class SelfAttnBlock1D(nn.Module):
         return z
 
 
+# 将批次两半视作两组待匹配视图，并在每个相同行号内做跨视图注意力。
+# 发生在鱼眼平面，尚未做球面投影，不能把这种逐行交换理解为严格的球面极线匹配。
 class CrossAttnBlock1D(nn.Module):
     def __init__(
         self,
@@ -132,6 +140,8 @@ class CrossAttnBlock1D(nn.Module):
 
     def forward(self, z: torch.Tensor):
         z_norm = self.norm_pre(z)
+        # [前B,右B,后B,左B] -> x=[前B,右B]、y=[后B,左B]。
+        # 对应 batch 元素配对，故实际交互为前<->后、右<->左，而非全部六种相机对。
         x, y = z_norm.chunk(2, dim=0)
 
         B, H, W, C = x.shape
@@ -143,6 +153,7 @@ class CrossAttnBlock1D(nn.Module):
         return z
 
 
+# [B,H,W,C] 展平成 [B,H*W,C]，在最粗层做覆盖全图的自注意力。
 class SelfAttnBlock2D(nn.Module):
     def __init__(
         self,
@@ -167,6 +178,7 @@ class SelfAttnBlock2D(nn.Module):
         return z
 
 
+# 同样按批次两半配对，但每个 query 可访问相反视图的整张特征图。
 class CrossAttnBlock2D(nn.Module):
     def __init__(
         self,
@@ -194,6 +206,7 @@ class CrossAttnBlock2D(nn.Module):
         return z
 
 
+# Transformer 的逐 token 通道映射：LayerNorm -> 扩展 -> GELU -> 压回 -> 残差。
 class FFN(nn.Module):
     def __init__(
         self,
@@ -217,6 +230,7 @@ class FFN(nn.Module):
         return z
 
 
+# U-Net 的卷积块：3x3 空间分支与 1x1 通道分支相加，输入输出通道/尺寸一致。
 class ConvBlock2D(nn.Module):
     def __init__(
         self,
@@ -247,6 +261,7 @@ class ConvBlock2D(nn.Module):
         return out
 
 
+# 最粗尺度的组合块：可选全图跨视图注意力 -> 全图自注意力，各自配 FFN。
 class GlobalAttnBlock(nn.Module):
     def __init__(
         self,
@@ -278,6 +293,8 @@ class GlobalAttnBlock(nn.Module):
         return z.contiguous()
 
 
+# 细尺度的组合块：逐行跨视图注意力 -> FFN -> 逐行自注意力 -> FFN。
+# 与 GlobalAttnBlock 的区别是序列长度为 W，而非 H*W。
 class BasicAttnBlock(nn.Module):
     def __init__(
         self,
@@ -304,6 +321,8 @@ class BasicAttnBlock(nn.Module):
         return z
 
 
+# 融合两个同尺度 [B,C,H,W] 特征：学习残差 + w*z0+(1-w)*z1。
+# 用在尺度间跳连，不是 volume_generator 中四相机投到 ERP 后的融合层。
 class FeatureFusion(nn.Module):
     def __init__(
         self,
@@ -342,6 +361,7 @@ class FeatureFusion(nn.Module):
         z = torch.cat([z0, z1], dim=1)
         if self.use_gate:
             eps = 0.01
+            # w=[B,C,H,W] 为逐通道门控；限制到 [0.01,0.99] 使两条尺度路径都保留信息。
             w = self.feature_gate(z).clamp(min=eps, max=1 - eps)
             z_out = self.feature_fusion(z) + (w) * z0 + (1 - w) * z1
         else:
@@ -350,6 +370,8 @@ class FeatureFusion(nn.Module):
         return z_out
 
 
+# 共享二维 CNN，输入 [4B,3,Hi,Wi]；返回 (1/4 特征,1/2 特征)，两者通道均为 C。
+# 更粗的 1/8、1/16 特征由 Unet 的池化路径产生，而不是此类直接返回四层。
 class CNNEncoder(nn.Module):
     def __init__(self, output_dim: int):
         super(CNNEncoder, self).__init__()

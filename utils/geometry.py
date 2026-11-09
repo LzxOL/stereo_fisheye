@@ -31,6 +31,8 @@ def getTr(transform: np.ndarray) -> np.ndarray:
         return None
 
 def inverseTransform(transform: np.ndarray) -> np.ndarray:
+    # 若原变换为 P'=R*P+t，则逆变换为 P=R^T*P'-R^T*t。
+    # OcamModel 用它将配置中的 cam2rig 转成球面投影所需的 rig2cam。
     R, tr = getRot(transform), getTr(transform)
     R_inv = R.transpose()
     tr_inv = -R_inv.dot(tr)
@@ -41,6 +43,8 @@ def inverseTransform(transform: np.ndarray) -> np.ndarray:
         return np.concatenate((R_inv, tr_inv), axis=1)
 
 def applyTransform(transform: np.ndarray, P):
+    # P=[3,N]，transform 为旋转向量+平移的 6 维表示或 3x4/4x4 矩阵。
+    # 对所有点应用刚体变换 R*P+t；广播的 t=[3,1] 决定相机间真实基线。
     R, tr = getRot(transform), getTr(transform)
     if type(P) == torch.Tensor:
         R = torch.Tensor(R).to(P.device)

@@ -1,0 +1,31 @@
+usage: eval.py [-h] [--name NAME] --restore_ckpt RESTORE_CKPT
+               [--output_dir OUTPUT_DIR] [--db_root DB_ROOT]
+               [--dbname {omnithings,omnihouse,sunny,cloudy,sunset,all}]
+               [--phi_deg PHI_DEG]
+               [--equirect_size EQUIRECT_SIZE [EQUIRECT_SIZE ...]]
+               [--valid_iters VALID_ITERS] [--vis] [--save_result]
+               [--save_misc] [--save_point_cloud] [--no_save_float]
+
+Evaluation for PDF-Omni
+
+options:
+  -h, --help            show this help message and exit
+  --name NAME           name of your experiment
+  --restore_ckpt RESTORE_CKPT
+                        restore checkpoint
+  --output_dir OUTPUT_DIR
+                        directory to save evaluation outputs
+  --db_root DB_ROOT     path to dataset
+  --dbname {omnithings,omnihouse,sunny,cloudy,sunset,all}
+                        databases to evaluation
+  --phi_deg PHI_DEG     phi_deg
+  --equirect_size EQUIRECT_SIZE [EQUIRECT_SIZE ...]
+                        size of out ERP.
+  --valid_iters VALID_ITERS
+                        number of flow-field updates during validation forward
+                        pass
+  --vis                 oneline visualization
+  --save_result         save inverse depth prediction results (float32 TIFF)
+  --save_misc           save misc visualizations (includes colorized invdepth)
+  --save_point_cloud    save point cloud
+  --no_save_float       do NOT save float32 TIFF even if --save_result is set

@@ -17,6 +17,9 @@ def custom_sinc(x: torch.Tensor) -> torch.Tensor:
 
 
 def get_pe(h: int, w: int, pe_dim: int, dtype, device, mode: str = "grid"):
+    # 鱼眼特征的相对位置 PE：[h*w,h*w,pe_dim]，前两维对应 query/key token。
+    # 默认 grid 模式分别编码相对行、列位移；radial 是另一个可选坐标模式。
+    # 不参与鱼眼到 ERP 的几何投影，投影由标定 LUT 独立处理。
     if mode not in ("grid", "radial"):
         raise ValueError(f"Unknown PE mode: {mode}")
     with torch.no_grad():
@@ -39,6 +42,7 @@ def get_pe(h: int, w: int, pe_dim: int, dtype, device, mode: str = "grid"):
             pos_x = grid_x
             pos_y = grid_y
 
+        # 枚举所有 token 对的位移，而不是只为每个 token 存一个绝对位置向量。
         rel_x_pos = pos_x.reshape(-1, 1) - pos_x.reshape(1, -1)
         rel_y_pos = pos_y.reshape(-1, 1) - pos_y.reshape(1, -1)
         if mode == "radial":
@@ -66,6 +70,7 @@ def get_pe(h: int, w: int, pe_dim: int, dtype, device, mode: str = "grid"):
         pe_y = F.normalize(pe_y, p=2, dim=-1)
         rel_pe_y = pe_y[rel_y_pos + h - 1].reshape(h * w, h * w, pe_dim // 2).to(dtype)
 
+        # 将水平/垂直的 sinc 基函数嵌入拼接，交给 SelfAttn 按注意力权重聚合。
         pe = 0.5 * torch.cat([rel_pe_x, rel_pe_y], dim=2)
 
     return pe.clone()

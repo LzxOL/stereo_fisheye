@@ -1,0 +1,94 @@
+usage: train.py [-h] [--name NAME] [--restore_ckpt RESTORE_CKPT]
+                [--pretrain_ckpt PRETRAIN_CKPT] [--db_root DB_ROOT]
+                [--dbname {omnithings,omnihouse,sunny,cloudy,sunset} [{omnithings,omnihouse,sunny,cloudy,sunset} ...]]
+                [--phi_deg PHI_DEG] [--num_invdepth N]
+                [--equirect_size EQUIRECT_SIZE [EQUIRECT_SIZE ...]]
+                [--use_rgb] [--base_channel {32}] [--encoder_downsample_twice]
+                [--num_downsample NUM_DOWNSAMPLE] [--corr_levels CORR_LEVELS]
+                [--corr_radius CORR_RADIUS]
+                [--gru_small_kernel GRU_SMALL_KERNEL [GRU_SMALL_KERNEL ...]]
+                [--gru_large_kernel GRU_LARGE_KERNEL [GRU_LARGE_KERNEL ...]]
+                [--gru_large_mode {sep,conv}] [--gwc_groups GWC_GROUPS]
+                [--acv_concat_ch ACV_CONCAT_CH] [--geo_ch GEO_CH]
+                [--use_geo_acv] [--mixed_precision] [--fix_bn] [--use_ge]
+                [--use_digru] [--ge_scale GE_SCALE]
+                [--ge_map_size GE_MAP_SIZE] [--total_epochs TOTAL_EPOCHS]
+                [--batch_size BATCH_SIZE] [--train_iters TRAIN_ITERS]
+                [--valid_iters VALID_ITERS] [--lr LR] [--wdecay WDECAY]
+                [--grad_clip GRAD_CLIP] [--ot_iter OT_ITER]
+                [--lec_weight LEC_WEIGHT] [--num_workers NUM_WORKERS]
+                [--log_every LOG_EVERY] [--val_stride VAL_STRIDE]
+
+Training for PDF-Omni
+
+options:
+  -h, --help            show this help message and exit
+  --name NAME           name of your experiment
+  --restore_ckpt RESTORE_CKPT
+                        restore checkpoint
+  --pretrain_ckpt PRETRAIN_CKPT
+                        pretrained checkpoint for finetuning
+  --db_root DB_ROOT     path to dataset
+  --dbname {omnithings,omnihouse,sunny,cloudy,sunset} [{omnithings,omnihouse,sunny,cloudy,sunset} ...]
+                        databases to train
+  --phi_deg PHI_DEG     phi_deg
+  --num_invdepth N      number of disparity
+  --equirect_size EQUIRECT_SIZE [EQUIRECT_SIZE ...]
+                        size of out ERP.
+  --use_rgb             use 3-channel rgb color images as input
+  --base_channel {32}   base channel of the network
+  --encoder_downsample_twice
+                        the feature extractor downsamples fisheye input twice
+                        instead of once.
+  --num_downsample NUM_DOWNSAMPLE
+                        resolution of the disparity field (1/2^K)
+  --corr_levels CORR_LEVELS
+                        number of levels in the correlation pyramid
+  --corr_radius CORR_RADIUS
+                        width of the correlation pyramid
+  --gru_small_kernel GRU_SMALL_KERNEL [GRU_SMALL_KERNEL ...]
+                        small GRU kernel size (1 or 2 ints). e.g., "1" or "1
+                        1"
+  --gru_large_kernel GRU_LARGE_KERNEL [GRU_LARGE_KERNEL ...]
+                        large GRU kernel size (1 or 2 ints). e.g., "7" or "1
+                        7"
+  --gru_large_mode {sep,conv}
+                        sep: 1xk then kx1 (separable), conv: standard conv
+                        (square/rect)
+  --gwc_groups GWC_GROUPS
+                        num groups for GWC (attention branch)
+  --acv_concat_ch ACV_CONCAT_CH
+                        per-side compressed channels for concat volume
+  --geo_ch GEO_CH       hourglass output channels for geo encoding volume
+  --use_geo_acv         inject spherical coord channels into ACV attention
+  --mixed_precision     use mixed precision
+  --fix_bn              fix batch normalization
+  --use_ge              Enable GE (geometry embedding)
+  --use_digru           Enable DiGRU (Distortion-informed GRU)
+  --ge_scale GE_SCALE   Gaussian scale for GE Fourier features
+  --ge_map_size GE_MAP_SIZE
+                        Mapping size for GE Fourier features
+  --total_epochs TOTAL_EPOCHS
+                        total epochs of training
+  --batch_size BATCH_SIZE
+                        batch size
+  --train_iters TRAIN_ITERS
+                        number of updates to the disparity field in each
+                        forward pass.
+  --valid_iters VALID_ITERS
+                        number of flow-field updates during validation forward
+                        pass
+  --lr LR               max learning rate.
+  --wdecay WDECAY       Weight decay in optimizer.
+  --grad_clip GRAD_CLIP
+                        gradient clipping (global norm)
+  --ot_iter OT_ITER     Sinkhorn iterations for OT init in volume generator
+  --lec_weight LEC_WEIGHT
+                        LEC loss weight (set >0 to enable)
+  --num_workers NUM_WORKERS
+                        DataLoader worker processes
+  --log_every LOG_EVERY
+                        log/vis frequency in steps
+  --val_stride VAL_STRIDE
+                        evaluate every Nth val frame per epoch; final metrics
+                        should come from eval.py on the full test set

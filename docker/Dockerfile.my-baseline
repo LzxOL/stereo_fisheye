@@ -1,0 +1,9 @@
+# 复用服务器上已配置、验证的 PDF-Omni 环境，避免重新解析依赖或改变包版本。
+# 基础镜像需已存在于构建机器；它由本目录原有 Dockerfile 构建。
+ARG BASE_IMAGE=dl-pdf-omni:torch2.8.0-cu128
+FROM ${BASE_IMAGE}
+
+# 继承 Python 虚拟环境、CUDA、用户 dl、工作目录及 bash 启动命令。
+# 项目代码通过 docker/run.sh 挂载至 /workspace/PDF-Omni。
+LABEL org.opencontainers.image.title="my-baseline" \
+      org.opencontainers.image.description="Baseline image inheriting the validated PDF-Omni PyTorch 2.8 / CUDA 12.8 environment"

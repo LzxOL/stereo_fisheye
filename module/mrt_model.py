@@ -11,6 +11,8 @@ from .mrt_layers import BasicAttnBlock, ConvBlock2D, FeatureFusion, GlobalAttnBl
 from .mrt_utils import get_pe
 
 
+# 在单视图特征上建立四尺度金字塔，并在最粗尺度做全局自注意力。
+# 输入 [4B,C,Hf,Wf]；返回 z0/z1/z2/z3，空间尺寸每级减半（边缘尺寸依实际运算）。
 class Unet(nn.Module):
     def __init__(
         self,
@@ -78,6 +80,8 @@ class Unet(nn.Module):
             )
 
     def forward(self, z: Tensor):
+        # 位置编码是最粗层任意 token 对的相对坐标嵌入 [N,N,32]，N=(Hf/8)*(Wf/8)。
+        # 这是鱼眼特征平面 PE，不是后续 ERP 的球面 GE 或 PDD。
         if self.use_pe:
             H, W = z.shape[-2:]
             pe = get_pe(H // 8, W // 8, 32, z.dtype, z.device, mode=self.pe_mode)
@@ -100,6 +104,7 @@ class Unet(nn.Module):
             z3 = block(z3, pe)
         z3_new = z3
 
+        # 解码器逐级恢复分辨率；FeatureFusion 结合同级编码特征与粗尺度上下文。
         z2_new = self.up_conv2(z3_new)
         z2_new = self.concat_conv2(z2, z2_new)
         z2_new = self.dec2(z2_new)
@@ -115,6 +120,9 @@ class Unet(nn.Module):
         return z0_new, z1_new, z2_new, z3_new
 
 
+# 一个多分辨率 Transformer：细尺度使用逐行注意力，最粗尺度使用全图注意力。
+# 每个尺度都包含相反视图的 cross-attention 与自身的 self-attention；
+# 尺度间靠上下采样和 FeatureFusion 联通，而非直接将不同尺度 token 做 cross-attention。
 class MRT(nn.Module):
     def __init__(
         self,
@@ -192,6 +200,7 @@ class MRT(nn.Module):
         z2: Tensor,
         z3: Tensor,
     ):
+        # z0..z3 共享批次布局 [4B,...]；在向下路径把细尺度证据不断融入粗尺度。
         z0 = self.enc_attn0(z0)
         z1 = self.down_concat1(z1, self.down_conv0(z0))
         z1 = self.enc_attn1(z1)
@@ -206,6 +215,7 @@ class MRT(nn.Module):
         for block in self.dec_attn3s:
             z3 = block(z3)
 
+        # 向上路径把已交换视图信息的全局上下文逐级传回最高分辨率 z0。
         z3_up = self.up_conv2(z3)
         z2 = self.up_concat2(z2, z3_up)
         z2 = self.dec_attn2(z2)
@@ -221,6 +231,7 @@ class MRT(nn.Module):
         return z0, z1, z2, z3
 
 
+# 默认串联 3 个 MRT；中间保留四尺度，最后仅输出最高分辨率 z0=[4B,C,Hf,Wf]。
 class StackedMRT(nn.Module):
     def __init__(
         self,

@@ -99,6 +99,10 @@ def interp2D(I, grid):
 
 def pixelToGrid(pts, target_resolution: (int, int), 
                 source_resolution: (int, int)):
+    # pts=[2,H*W] 的鱼眼像素 (u,v) -> [H,W,2] 的 grid_sample 归一化坐标。
+    # (0,0) 对应 (-1,-1)，(width-1,height-1) 对应 (+1,+1)，匹配 align_corners=True。
+    # source_resolution 是原始鱼眼大小；后续在缩小的特征图上复用同一归一化网格，
+    # 并未逐层按 CNN 卷积中心重新计算坐标。
     h, w = target_resolution
     height, width = source_resolution
     xs = (pts[0,:]) / (width - 1) * 2 - 1
@@ -109,6 +113,8 @@ def pixelToGrid(pts, target_resolution: (int, int),
 
 def normalizeImage(image: np.ndarray, mask=None,
                    channel_wise_mean=True) -> np.ndarray:
+    # 使用可见区域统计均值/标准差，再将无效区域置零；这是图像预处理，
+    # 不等价于在编码器后给特征重新乘 mask（卷积可使邻域信息进入边缘）。
     image = toNumpy(image)
     def __normalizeImage1D(image, mask):
         image = image.squeeze().astype(np.float32)

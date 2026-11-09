@@ -110,6 +110,7 @@ def _save_float_tiff(invdepth_float: np.ndarray, out_path: str):
 
 
 def evaluate_dataset(opts, net, dbname):
+    # 与训练复用相同的鱼眼预处理/LUT；test_mode 只返回最终完整逆深度索引图。
     LOG_INFO(f"=== Start Evaluation for: {dbname} ===")
 
     opts.dbname = dbname
@@ -148,6 +149,7 @@ def evaluate_dataset(opts, net, dbname):
             invdepth_idx = net(imgs, grids, opts.valid_iters, test_mode=True)
 
         invdepth_idx = toNumpy(invdepth_idx[0, 0])
+        # rho=rho_min+index*Delta_rho；保存的浮点 TIFF 是逆深度，物理深度需再取倒数。
         invdepth     = data.indexToInvdepth(invdepth_idx)
 
         toc = time.time() - tic
@@ -214,6 +216,7 @@ def main():
         sys.exit('--restore_ckpt not found: %s' % (opts.snapshot_path))
     snapshot = torch.load(opts.snapshot_path, weights_only=False)
 
+    # 推理网络结构与 GE/DiGRU 开关来自 checkpoint 的 net_opts，不能只看训练脚本默认值。
     opts.net_opts = snapshot['net_opts']
     net = torch.nn.DataParallel(PDFOmni(opts.net_opts), device_ids=[0])
     net.load_state_dict(snapshot['net_state_dict'])

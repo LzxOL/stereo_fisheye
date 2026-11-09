@@ -3,6 +3,8 @@ import torch.nn.functional as F
 from utils.common import *
 
 
+# 通用 Conv/可选 BN/可选 ReLU；PDFOmni.state_conv 用它将上下文 C 通道映射到
+# 隐藏状态 2C 通道（1x1 卷积、默认带 BN、关闭本层 ReLU，外部接 tanh）。
 class Conv2D(torch.nn.Module):
     def __init__(self, ch_in, ch_out, kernel_size, stride=1, pad=1,
                  dilation=1, bn=True, relu=True):

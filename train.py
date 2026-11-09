@@ -59,6 +59,7 @@ parser.add_argument('--use_geo_acv', action='store_true', help='inject spherical
 parser.add_argument('--mixed_precision', action='store_true', help='use mixed precision')
 parser.add_argument('--fix_bn', action='store_true', help='fix batch normalization')
 
+# 完整论文模型依赖这两个开关；只运行裸 train.py 时 GE/DAA+DiGRU 默认都关闭。
 parser.add_argument('--use_ge', action='store_true', help="Enable GE (geometry embedding)")
 parser.add_argument('--use_digru', action='store_true', help="Enable DiGRU (Distortion-informed GRU)")
 
@@ -162,6 +163,7 @@ def count_parameters(model):
 
 
 def fetch_optimizer(model, num_steps):
+    # 论文 §4.1：AdamW + OneCycleLR，先短暂升温，再按余弦衰减学习率。
     optimizer = optim.AdamW(model.parameters(), lr=opts.lr, weight_decay=opts.wdecay, eps=1e-5)
     scheduler = optim.lr_scheduler.OneCycleLR(
         optimizer, opts.lr, num_steps + 100,
@@ -176,6 +178,8 @@ def require_checkpoint(path, label):
 
 
 def train(epoch_total, load_state):
+    # 训练数据返回四路鱼眼图像、完整逆深度索引 GT、有效监督掩码及原始图像。
+    # 多数据集训练共享首个数据集的几何查表，要求它们采用兼容的 rig 配置。
     if len(opts.dbname) > 1:
         data = MultiDataset(opts.dbname, opts.data_opts, db_root=opts.db_root)
     else:
@@ -242,6 +246,7 @@ def train(epoch_total, load_state):
                 net.load_state_dict(snapshot['net_state_dict'])
                 LOG_INFO('checkpoint %s is loaded' % (opts.pretrain_path))
 
+    # 每个网格 [Hout/s,Wout/s,N/s,2]：标定固定，不训练，每帧复用同一套球面投影。
     grids = [torch.tensor(grid, requires_grad=False).cuda() for grid in data.grids]
 
     total_iters = len(data) * start_epoch // max(opts.batch_size, 1)
@@ -263,12 +268,15 @@ def train(epoch_total, load_state):
 
             optimizer.zero_grad(set_to_none=True)
 
+            # Fig. 2 完整前向：得到 T 个完整索引预测，以及 [B,D,H,W] 初始化概率体。
             out = net(imgs, grids, opts.train_iters)
             if isinstance(out, (tuple, list)) and len(out) == 2:
                 predictions, init_prob = out
             else:
                 predictions, init_prob = out, None
 
+            # 式 (16)：L=Lseq+lambda_lec*Llec；前者监督迭代结果，后者监督初始化分布。
+            # 两个损失的空间/候选轴分辨率不同，LEC 内部负责 GT 降采样和索引换算。
             loss_seq = sequence_loss(predictions, gt.unsqueeze(1), valid.unsqueeze(1))
             loss = loss_seq
             loss_lec = None
@@ -326,6 +334,7 @@ def train(epoch_total, load_state):
                 vis_img = data.makeVisImage(raw_imgs_np, invdepth_vis, gt=toNumpy(gt[0]))
                 writer.add_image("train/vis", vis_img.transpose(2, 0, 1), total_iters)
 
+            # 混合精度反传后先反缩放再裁剪梯度；若溢出跳过优化步骤，也跳过学习率推进。
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             if opts.grad_clip is not None and opts.grad_clip > 0:
@@ -345,6 +354,7 @@ def train(epoch_total, load_state):
         vis_img = data.makeVisImage(raw_imgs_np, invdepth, gt=toNumpy(gt[0]))
         writer.add_image("train/vis", vis_img.transpose(2, 0, 1), total_iters)
 
+        # 验证仅获取最后一轮完整索引图；不计算 LEC，不生成中间上采样结果。
         net.eval()
         eval_list = data.opts.test_idx[::max(1, args.val_stride)]
         errors = np.zeros((len(eval_list), 5))
